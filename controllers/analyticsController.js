@@ -1,4 +1,5 @@
 const Bill = require('../models/Bill');
+const Expense = require('../models/Expense');
 
 const getAnalytics = async (req, res) => {
     try {
@@ -40,13 +41,13 @@ const getAnalytics = async (req, res) => {
             }
         ]);
 
-        // 3. Trend Data
+        // 3. Trend Data (Revenue)
         let groupFormat;
         if (groupBy === 'Monthly') groupFormat = "%Y-%m";
         else if (groupBy === 'Weekly') groupFormat = "%Y-%U";
         else groupFormat = "%Y-%m-%d"; // Daily
 
-        const trendData = await Bill.aggregate([
+        const revenueTrend = await Bill.aggregate([
             matchStage,
             {
                 $group: {
@@ -54,12 +55,52 @@ const getAnalytics = async (req, res) => {
                     val: { $sum: "$netAmount" }
                 }
             },
-            { $sort: { "_id": 1 } },
+            { $sort: { "_id": 1 } }
+        ]);
+
+        // 3b. Trend Data (Expenses)
+        const expenseTrend = await Expense.aggregate([
             {
-                $project: {
-                    name: "$_id",
-                    val: 1,
-                    _id: 0
+                $match: {
+                    date: { $gte: start, $lte: end }
+                }
+            },
+            {
+                $group: {
+                    _id: { $dateToString: { format: groupFormat, date: "$date" } },
+                    val: { $sum: "$amount" }
+                }
+            },
+            { $sort: { "_id": 1 } }
+        ]);
+
+        // Merge Revenue and Expense Trends
+        const allDates = Array.from(new Set([
+            ...revenueTrend.map(r => r._id),
+            ...expenseTrend.map(e => e._id)
+        ])).sort();
+
+        const trendData = allDates.map(date => {
+            const rev = revenueTrend.find(r => r._id === date);
+            const exp = expenseTrend.find(e => e._id === date);
+            return {
+                name: date,
+                revenue: rev ? rev.val : 0,
+                expense: exp ? exp.val : 0
+            };
+        });
+
+        // 3c. Total Expenses for the range
+        const rangeExpenses = await Expense.aggregate([
+            {
+                $match: {
+                    date: { $gte: start, $lte: end }
+                }
+            },
+            {
+                $group: {
+                    _id: null,
+                    total: { $sum: '$amount' }
                 }
             }
         ]);
@@ -77,6 +118,16 @@ const getAnalytics = async (req, res) => {
                 $group: {
                     _id: '$paymentMode',
                     total: { $sum: '$netAmount' }
+                }
+            }
+        ]);
+
+        const dayExpenses = await Expense.aggregate([
+            { $match: { date: { $gte: dayStart, $lte: dayEnd } } },
+            {
+                $group: {
+                    _id: null,
+                    total: { $sum: '$amount' }
                 }
             }
         ]);
@@ -107,15 +158,31 @@ const getAnalytics = async (req, res) => {
             ]))[0]?.gst || 0 : 0
         };
 
+        const totalExpenses = rangeExpenses[0]?.total || 0;
+        const totalRevenue = rangeStats[0]?.total || 0;
+
+        // 7. Raw Expenses List
+        const rawExpenses = await Expense.find({
+            date: { $gte: start, $lte: end }
+        }).sort({ date: -1 });
+
         res.json({
-            range: rangeStats[0] || { total: 0, count: 0, gst: 0 },
+            range: {
+                total: totalRevenue,
+                count: rangeStats[0]?.count || 0,
+                gst: rangeStats[0]?.gst || 0,
+                expenses: totalExpenses,
+                netProfit: totalRevenue - totalExpenses
+            },
             paymentModes,
             trendData,
             dayReport: {
                 date: end.toISOString().split('T')[0],
                 total: totalDaySales,
+                expenses: dayExpenses[0]?.total || 0,
                 breakdown: dayStats
             },
+            expenses: rawExpenses,
             // Legacy/Dashboard compatibility
             today: todayStats,
             monthly: monthlySales[0] || { total: 0 },
