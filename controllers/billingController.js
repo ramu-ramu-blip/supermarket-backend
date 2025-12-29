@@ -2,13 +2,14 @@ const Bill = require('../models/Bill');
 const Product = require('../models/Product');
 
 const createBill = async (req, res) => {
-    const { items, customerName, totalAmount, gstAmount, discountAmount, netAmount, paymentMode } = req.body;
+    const { items, customerName, customerPhone, totalAmount, gstAmount, discountAmount, netAmount, paymentMode } = req.body;
 
     try {
         const invoiceNumber = `INV-${Date.now()}`;
         const bill = await Bill.create({
             invoiceNumber,
             customerName,
+            customerPhone,
             items,
             totalAmount,
             gstAmount,

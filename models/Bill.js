@@ -4,6 +4,7 @@ const billSchema = mongoose.Schema(
     {
         invoiceNumber: { type: String, required: true, unique: true },
         customerName: { type: String },
+        customerPhone: { type: String, required: true },
         items: [
             {
                 productId: { type: mongoose.Schema.Types.ObjectId, ref: 'Product' },
