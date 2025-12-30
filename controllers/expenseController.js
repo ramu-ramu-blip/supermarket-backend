@@ -1,4 +1,4 @@
-const Expense = require('../models/Expense');
+import Expense from '../models/Expense.js';
 
 // @desc    Add new expense
 // @route   POST /api/expenses
@@ -42,7 +42,4 @@ const getExpenses = async (req, res) => {
     }
 };
 
-module.exports = {
-    addExpense,
-    getExpenses
-};
+export { addExpense, getExpenses };

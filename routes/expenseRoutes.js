@@ -1,10 +1,10 @@
-const express = require('express');
+import express from 'express';
 const router = express.Router();
-const { addExpense, getExpenses } = require('../controllers/expenseController');
-const { protect } = require('../middleware/authMiddleware');
+import { addExpense, getExpenses } from '../controllers/expenseController.js';
+import { protect } from '../middleware/authMiddleware.js';
 
 router.route('/')
     .post(protect, addExpense)
     .get(protect, getExpenses);
 
-module.exports = router;
+export default router;

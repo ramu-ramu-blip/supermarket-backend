@@ -1,5 +1,8 @@
-const Bill = require('../models/Bill');
-const Expense = require('../models/Expense');
+import Bill from '../models/Bill.js';
+import Expense from '../models/Expense.js';
+import Product from '../models/Product.js';
+import Supplier from '../models/Supplier.js';
+import Category from '../models/Category.js';
 
 const getAnalytics = async (req, res) => {
     try {
@@ -36,7 +39,8 @@ const getAnalytics = async (req, res) => {
             {
                 $group: {
                     _id: '$paymentMode',
-                    total: { $sum: '$netAmount' }
+                    total: { $sum: '$netAmount' },
+                    count: { $sum: 1 }
                 }
             }
         ]);
@@ -140,13 +144,19 @@ const getAnalytics = async (req, res) => {
             { $group: { _id: null, total: { $sum: '$netAmount' } } },
         ]);
 
-        // 6. Top Products (for Dashboard compatibility)
+        // 6. Top Products (Filtered by range)
         const topProducts = await Bill.aggregate([
+            matchStage,
             { $unwind: '$items' },
             { $group: { _id: '$items.name', totalQty: { $sum: '$items.quantity' }, totalRev: { $sum: '$items.total' } } },
             { $sort: { totalQty: -1 } },
             { $limit: 20 },
         ]);
+
+        // 7. Low Stock Products
+        const lowStockProducts = await Product.find({
+            $expr: { $lte: ["$stockQuantity", "$minStockLevel"] }
+        });
 
         // Construct 'today' stats for compatibility
         const todayStats = {
@@ -155,7 +165,8 @@ const getAnalytics = async (req, res) => {
             gst: dayStats.length ? (await Bill.aggregate([
                 { $match: { createdAt: { $gte: dayStart, $lte: dayEnd } } },
                 { $group: { _id: null, gst: { $sum: '$gstAmount' } } }
-            ]))[0]?.gst || 0 : 0
+            ]))[0]?.gst || 0 : 0,
+            breakdown: dayStats
         };
 
         const totalExpenses = rangeExpenses[0]?.total || 0;
@@ -166,6 +177,22 @@ const getAnalytics = async (req, res) => {
             date: { $gte: start, $lte: end }
         }).sort({ date: -1 });
 
+        // 9. Overall Payment Modes (All time)
+        const overallPaymentModes = await Bill.aggregate([
+            {
+                $group: {
+                    _id: '$paymentMode',
+                    total: { $sum: '$netAmount' },
+                    count: { $sum: 1 }
+                }
+            }
+        ]);
+
+        // 10. Overall Counts
+        const totalProducts = await Product.countDocuments();
+        const totalSuppliers = await Supplier.countDocuments();
+        const totalCategories = await Category.countDocuments();
+
         res.json({
             range: {
                 total: totalRevenue,
@@ -175,6 +202,7 @@ const getAnalytics = async (req, res) => {
                 netProfit: totalRevenue - totalExpenses
             },
             paymentModes,
+            overallPaymentModes,
             trendData,
             dayReport: {
                 date: end.toISOString().split('T')[0],
@@ -186,11 +214,17 @@ const getAnalytics = async (req, res) => {
             // Legacy/Dashboard compatibility
             today: todayStats,
             monthly: monthlySales[0] || { total: 0 },
-            topProducts
+            topProducts,
+            lowStockProducts,
+            overall: {
+                products: totalProducts,
+                suppliers: totalSuppliers,
+                categories: totalCategories
+            }
         });
     } catch (error) {
         res.status(500).json({ message: error.message });
     }
 };
 
-module.exports = { getAnalytics };
+export { getAnalytics };

@@ -1,5 +1,5 @@
-const Bill = require('../models/Bill');
-const Product = require('../models/Product');
+import Bill from '../models/Bill.js';
+import Product from '../models/Product.js';
 
 const createBill = async (req, res) => {
     const { items, customerName, customerPhone, totalAmount, gstAmount, discountAmount, netAmount, paymentMode } = req.body;
@@ -34,7 +34,20 @@ const createBill = async (req, res) => {
 
 const getInvoices = async (req, res) => {
     try {
-        const bills = await Bill.find({}).populate('user', 'name');
+        const { search } = req.query;
+        let query = {};
+        
+        if (search) {
+            query = {
+                $or: [
+                    { invoiceNumber: { $regex: search, $options: 'i' } },
+                    { customerName: { $regex: search, $options: 'i' } },
+                    { customerPhone: { $regex: search, $options: 'i' } }
+                ]
+            };
+        }
+        
+        const bills = await Bill.find(query).populate('user', 'name');
         res.json(bills);
     } catch (error) {
         res.status(500).json({ message: error.message });
@@ -63,4 +76,4 @@ const deleteBill = async (req, res) => {
     }
 };
 
-module.exports = { createBill, getInvoices, getInvoiceById, deleteBill };
+export { createBill, getInvoices, getInvoiceById, deleteBill };

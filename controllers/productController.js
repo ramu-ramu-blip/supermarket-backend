@@ -1,7 +1,14 @@
-const Product = require('../models/Product');
+import Product from '../models/Product.js';
+import Category from '../models/Category.js';
 
 const createProduct = async (req, res) => {
     try {
+        if (req.body.category) {
+            const categoryExists = await Category.findOne({ name: { $regex: new RegExp(`^${req.body.category}$`, 'i') } });
+            if (!categoryExists) {
+                await Category.create({ name: req.body.category });
+            }
+        }
         const product = await Product.create(req.body);
         res.status(201).json(product);
     } catch (error) {
@@ -11,7 +18,21 @@ const createProduct = async (req, res) => {
 
 const getProducts = async (req, res) => {
     try {
-        const products = await Product.find({});
+        const { search } = req.query;
+        let query = {};
+        
+        if (search) {
+            query = {
+                $or: [
+                    { name: { $regex: search, $options: 'i' } },
+                    { brand: { $regex: search, $options: 'i' } },
+                    { category: { $regex: search, $options: 'i' } },
+                    { barcode: { $regex: search, $options: 'i' } }
+                ]
+            };
+        }
+        
+        const products = await Product.find(query);
         res.json(products);
     } catch (error) {
         res.status(500).json({ message: error.message });
@@ -35,6 +56,12 @@ const getExpiringProducts = async (req, res) => {
 
 const updateProduct = async (req, res) => {
     try {
+        if (req.body.category) {
+            const categoryExists = await Category.findOne({ name: { $regex: new RegExp(`^${req.body.category}$`, 'i') } });
+            if (!categoryExists) {
+                await Category.create({ name: req.body.category });
+            }
+        }
         const product = await Product.findByIdAndUpdate(req.params.id, req.body, { new: true });
         if (!product) return res.status(404).json({ message: 'Product not found' });
         res.json(product);
@@ -53,8 +80,8 @@ const deleteProduct = async (req, res) => {
     }
 };
 
-const fs = require('fs');
-const csv = require('csv-parser');
+import fs from 'fs';
+import csv from 'csv-parser';
 
 const bulkImportProducts = async (req, res) => {
     if (!req.file) {
@@ -67,35 +94,32 @@ const bulkImportProducts = async (req, res) => {
         .on('data', (data) => results.push(data))
         .on('end', async () => {
             try {
-                // Map CSV data tochema (assuming CSV headers match schema keys or need mapping)
-                // Minimal mapping assuming headers: name, category, costPrice, sellingPrice, stockQuantity, expiryDate
+                // Map CSV data to schema
                 const productsToInsert = results.map(row => ({
-                    name: row.name,
-                    brand: row.brand,
-                    category: row.category,
-                    barcode: row.barcode,
+                    ...row,
                     costPrice: Number(row.costPrice),
                     sellingPrice: Number(row.sellingPrice),
                     gstPercent: Number(row.gstPercent) || 0,
-                    gstType: row.gstType || 'Inclusive',
                     stockQuantity: Number(row.stockQuantity),
-                    unit: row.unit || 'Packet',
-                    expiryDate: new Date(row.expiryDate), // format: YYYY-MM-DD
-                    batchNo: row.batchNo,
                     minStockLevel: Number(row.minStockLevel) || 10,
-                    supplier: row.supplier
+                    expiryDate: new Date(row.expiryDate)
                 }));
 
+                // Extract and unique categories from CSV
+                const categories = [...new Set(results.map(r => r.category).filter(Boolean))];
+                for (const cat of categories) {
+                    const exists = await Category.findOne({ name: { $regex: new RegExp(`^${cat}$`, 'i') } });
+                    if (!exists) await Category.create({ name: cat });
+                }
+
                 const inserted = await Product.insertMany(productsToInsert);
-
-                // Cleanup file
                 fs.unlinkSync(req.file.path);
-
                 res.status(201).json({ message: 'Products imported successfully', count: inserted.length });
             } catch (error) {
+                if (fs.existsSync(req.file.path)) fs.unlinkSync(req.file.path);
                 res.status(400).json({ message: error.message });
             }
         });
 };
 
-module.exports = { createProduct, getProducts, getExpiringProducts, updateProduct, deleteProduct, bulkImportProducts };
+export { createProduct, getProducts, getExpiringProducts, updateProduct, deleteProduct, bulkImportProducts };

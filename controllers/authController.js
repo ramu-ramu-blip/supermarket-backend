@@ -5,8 +5,8 @@
 
 
 
-const jwt = require('jsonwebtoken');
-const User = require('../models/User');
+import jwt from 'jsonwebtoken';
+import User from '../models/User.js';
 
 const generateToken = (id) => {
     return jwt.sign({ id }, process.env.JWT_SECRET, { expiresIn: '30d' });
@@ -125,4 +125,4 @@ const createAdmin = async (req, res) => {
     }
 };
 
-module.exports = { registerUser, loginUser, updateProfile, createAdmin };
+export { registerUser, loginUser, updateProfile, createAdmin };
